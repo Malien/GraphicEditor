@@ -1,14 +1,34 @@
 package shapes;
 
+import components.Collider;
 import org.lwjgl.opengl.GL11;
+import primitives.Vec2;
 import primitives.Vec3;
 
 public class Rect implements Shape {
 
     private float[] ver = new float[8];
-    private Vec3<Float> color = new Vec3<>();
+    private Vec3<Float> color = new Vec3<>(0f,0f,0f);
+
+    public float x;
+    public float y;
+    public float width;
+    public float height;
 
     public Rect(float x, float y, float width, float height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        recalc();
+    }
+
+    public Rect(float x, float y, float width, float height, Vec3<Float> color) {
+        this(x, y, width, height);
+        this.color = color;
+    }
+
+    public void recalc(){
         ver[0] = x;
         ver[1] = y;
         ver[2] = x + width;
@@ -17,11 +37,6 @@ public class Rect implements Shape {
         ver[5] = y + height;
         ver[6] = x;
         ver[7] = y + height;
-    }
-
-    public Rect(float x, float y, float width, float height, Vec3<Float> color) {
-        this(x, y, width, height);
-        this.color = color;
     }
 
     @Override
@@ -37,5 +52,15 @@ public class Rect implements Shape {
     @Override
     public Vec3<Float> color() {
         return color;
+    }
+
+    @Override
+    public Collider collider() {
+        return point -> point.x > x && point.y > y && point.x < x+width && point.y < y+height;
+    }
+
+    @Override
+    public void setColor(Vec3<Float> color) {
+        this.color = color;
     }
 }

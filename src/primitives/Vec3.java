@@ -3,9 +3,9 @@ package primitives;
 import java.util.Objects;
 
 public class Vec3<T> {
-    T x;
-    T y;
-    T z;
+    public T x;
+    public T y;
+    public T z;
 
     public Vec3(T x, T y, T z) {
         this.x = x;
@@ -16,24 +16,8 @@ public class Vec3<T> {
     public Vec3() {
     }
 
-    public T getX() {
-        return x;
-    }
-
-    public void setX(T x) {
-        this.x = x;
-    }
-
-    public T getY() {
-        return y;
-    }
-
-    public void setY(T y) {
-        this.y = y;
-    }
-
-    public T getZ() {
-        return z;
+    public Vec3<T> copy() {
+        return new Vec3<>(x,y,z);
     }
 
     @Override
@@ -43,10 +27,6 @@ public class Vec3<T> {
                 ", y=" + y +
                 ", z=" + z +
                 '}';
-    }
-
-    public void setZ(T z) {
-        this.z = z;
     }
 
     @Override
