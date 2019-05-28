@@ -2,9 +2,12 @@ import components.Tool;
 import components.ToolState;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.GL;
-import primitives.*;
+import primitives.Vec2;
+import primitives.Vec3;
+import shapes.Corner;
 import shapes.Rect;
 import shapes.Shape;
+import util.Transfrom;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,13 +22,14 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 
 public class CanvasRenderer {
 
-    private static final int W_INITIAL_WIDTH = 600;
-    private static final int W_INITIAL_HEIGHT = 400;
+    private static final int W_INITIAL_WIDTH = 800;
+    private static final int W_INITIAL_HEIGHT = 600;
     private static final String W_TITLE = "Graphics Editor";
 
     //Modifier keys status
     private boolean kSpace = false;
     private boolean kAlt = false;
+    private boolean kCtrl = false;
 
     //Mouse stats
     private Vec2<Double> prevPos = new Vec2<>(0.0,0.0);
@@ -40,8 +44,10 @@ public class CanvasRenderer {
     private float scale = 1;
 
     //General variables
-    private LinkedList<Shape> shapes = new LinkedList<>();
+    LinkedList<Shape> shapes = new LinkedList<>();
     private Shape selected = null;
+    private Corner corner = null;
+    private static final float VERTEX_RADIUS = 5;
 
     private UIRenderer ui;
     private ToolState state;
@@ -61,16 +67,45 @@ public class CanvasRenderer {
         if ((key == GLFW_KEY_LEFT_ALT || key == GLFW_KEY_RIGHT_ALT) && action == GLFW_RELEASE) {
             kAlt = false;
         }
+        if ((key ==GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL) && action == GLFW_PRESS) {
+            kCtrl = true;
+        }
+        if ((key ==GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL) && action == GLFW_RELEASE) {
+            kCtrl = false;
+        }
+        if (key == GLFW_KEY_V && action == GLFW_PRESS) {
+            state.current = Tool.SELECT;
+            ui.updateTool();
+        }
+        if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+            state.current = Tool.RECT;
+            ui.updateTool();
+        }
+        if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+            state.current = Tool.POLYGON;
+            ui.updateTool();
+        }
+        if ((key == GLFW_KEY_DELETE || key == GLFW_KEY_BACKSPACE) && action == GLFW_RELEASE && selected != null) {
+            shapes.remove(selected);
+            selected = null;
+        }
+        if (key == GLFW_KEY_S && action == GLFW_PRESS && kCtrl) {
+            ui.save();
+        }
+        if (key == GLFW_KEY_O && action == GLFW_PRESS && kCtrl) {
+            ui.load();
+        }
     };
     private final GLFWMouseButtonCallbackI mbCallback = (window, button, action, mods) -> {
-        if (!kSpace && state.current == Tool.SELECT && button == GLFW_MOUSE_BUTTON_1 && action == GLFW_RELEASE) {
-            Vec2<Double> dpos = cursorPos(window);
-            Vec2<Float> pos = new Vec2<>(
-                    (dpos.x.floatValue() - translation.x)/scale,
-                    (dpos.y.floatValue() - translation.y)/scale);
+        if (!kSpace && state.current == Tool.SELECT && button == GLFW_MOUSE_BUTTON_1 && action == GLFW_PRESS) {
+            Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(cursorPos(window), translation, scale);
+            if (selected != null) {
+                corner = selected.getCorner(worldPos, VERTEX_RADIUS / scale);
+                if (corner != null) return;
+            }
             selected = null;
             for (Shape shape : shapes) {
-                if (shape.collider().contains(pos)) {
+                if (shape.collider().contains(worldPos)) {
                     selected = shape;
                 }
             }
@@ -111,7 +146,7 @@ public class CanvasRenderer {
     private Vec2<Integer> windowSize(long window) {
         int[] width = new int[1];
         int[] height = new int[1];
-        glfwGetWindowPos(window, width, height);
+        glfwGetWindowSize(window, width, height);
         return new Vec2<>(width[0], height[0]);
     }
     private Vec2<Integer> windowPos(long window) {
@@ -158,27 +193,57 @@ public class CanvasRenderer {
             } else {
                 tracked = false;
             }
-        } else if (state.current == Tool.RECT) {
-            if (mousePressed) {
-                if (selected == null) {
-                    Vec2<Double> curPos = cursorPos(window);
-                    selected = new Rect(
-                            (curPos.x.floatValue() - translation.x) / scale,
-                            (curPos.y.floatValue() - translation.y) / scale,
-                            0,
-                            0,
-                            state.color.copy());
-                    shapes.add(selected);
+        } else switch (state.current) {
+            case RECT:
+                if (mousePressed) {
+                    if (selected == null) {
+                        Vec2<Double> curPos = cursorPos(window);
+                        selected = new Rect(
+                                (curPos.x.floatValue() - translation.x) / scale,
+                                (curPos.y.floatValue() - translation.y) / scale,
+                                0,
+                                0,
+                                state.color.copy());
+                        shapes.add(selected);
+                    } else {
+                        Vec2<Double> curPos = cursorPos(window);
+                        Rect selectedRect = (Rect) selected;
+                        selectedRect.width = (curPos.x.floatValue() - translation.x) / scale - selectedRect.x;
+                        selectedRect.height = (curPos.y.floatValue() - translation.y) / scale - selectedRect.y;
+                        selectedRect.recalc();
+                    }
                 } else {
-                    Vec2<Double> curPos = cursorPos(window);
-                    Rect selectedRect = (Rect) selected;
-                    selectedRect.width = (curPos.x.floatValue() - translation.x) / scale - selectedRect.x;
-                    selectedRect.height = (curPos.y.floatValue() - translation.y) / scale - selectedRect.y;
-                    selectedRect.recalc();
+                    selected = null;
                 }
-            } else {
-                selected = null;
-            }
+                break;
+            case SELECT:
+                if (selected != null && mousePressed) {
+                    Vec2<Double> mousePos = cursorPos(window);
+                    Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(mousePos, translation, scale);
+                    if (corner != null) {
+                        if (tracked) {
+                            Vec2<Float> vec = new Vec2<>(
+                                    (float) (mousePos.x - prevPos.x) / scale,
+                                    (float) (mousePos.y - prevPos.y) / scale);
+                            corner.translate(vec);
+                            prevPos = mousePos;
+                        } else {
+                            tracked = true;
+                            prevPos = mousePos;
+                        }
+                    } else if (selected.collider().contains(worldPos)) {
+                        if (tracked) {
+                            selected.translate(new Vec2<>(
+                                            (float) (mousePos.x - prevPos.x) / scale,
+                                            (float) (mousePos.y - prevPos.y) / scale));
+                            prevPos = mousePos;
+                        } else {
+                            tracked = true;
+                            prevPos = mousePos;
+                        }
+                    }
+                }
+                break;
         }
 
         if (!mousePressed) {
@@ -186,6 +251,7 @@ public class CanvasRenderer {
             mouseSpeed.y *= DECCEL_RATE;
             translation.x += mouseSpeed.x.floatValue();
             translation.y += mouseSpeed.y.floatValue();
+            tracked = false;
         }
         scale *= 1 + scrollSpeed;
         Vec2<Double> mousePos = cursorPos(window);
@@ -281,6 +347,16 @@ public class CanvasRenderer {
                         float[] ver = selected.vertices();
                         for (int i=0; i<ver.length; i+=2) {
                             glVertex2f(ver[i]*scale+translation.x, ver[i+1]*scale + translation.y);
+                        }
+                    glEnd();
+                    glBegin(GL_QUADS);
+                        for (int i=0; i<ver.length; i+=2) {
+                            float x = ver[i]*scale+translation.x;
+                            float y = ver[i+1]*scale + translation.y;
+                            glVertex2f(x-VERTEX_RADIUS, y-VERTEX_RADIUS);
+                            glVertex2f(x+VERTEX_RADIUS, y-VERTEX_RADIUS);
+                            glVertex2f(x+VERTEX_RADIUS, y+VERTEX_RADIUS);
+                            glVertex2f(x-VERTEX_RADIUS, y+VERTEX_RADIUS);
                         }
                     glEnd();
                 }

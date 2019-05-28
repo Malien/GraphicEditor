@@ -63,4 +63,48 @@ public class Rect implements Shape {
     public void setColor(Vec3<Float> color) {
         this.color = color;
     }
+
+    @Override
+    public void translate(Vec2<Float> vec) {
+        x += vec.x;
+        y += vec.y;
+        recalc();
+    }
+
+    @Override
+    public Corner getCorner(Vec2<Float> pos, float radius) {
+        if (pos.x > ver[0] - radius && pos.x < ver[0] + radius && pos.y > ver[1] - radius && pos.y < ver[1] + radius) {
+            return vec -> {
+                x += vec.x;
+                width -= vec.x;
+                y += vec.y;
+                height -= vec.y;
+                recalc();
+            };
+        }
+        if (pos.x > ver[2] - radius && pos.x < ver[2] + radius && pos.y > ver[3] - radius && pos.y < ver[3] + radius) {
+            return vec -> {
+                width += vec.x;
+                y += vec.y;
+                height -= vec.y;
+                recalc();
+            };
+        }
+        if (pos.x > ver[4] - radius && pos.x < ver[4] + radius && pos.y > ver[5] - radius && pos.y < ver[5] + radius) {
+            return vec -> {
+                width += vec.x;
+                height += vec.y;
+                recalc();
+            };
+        }
+        if (pos.x > ver[6] - radius && pos.x < ver[6] + radius && pos.y > ver[7] - radius && pos.y < ver[7] + radius) {
+            return vec -> {
+                x += vec.x;
+                width -= vec.x;
+                height += vec.y;
+                recalc();
+            };
+        }
+        return null;
+    }
 }

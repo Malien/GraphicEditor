@@ -1,8 +1,9 @@
 package primitives;
 
+import java.io.Serializable;
 import java.util.Objects;
 
-public class Vec2<T> {
+public class Vec2<T> implements Serializable {
     public T x;
     public T y;
 
