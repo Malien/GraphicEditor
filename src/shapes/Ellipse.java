@@ -102,7 +102,7 @@ public class Ellipse implements Shape {
     }
 
     @Override
-    public Collider collider() {
+    public Collider collider(float scale) {
         return point -> Math.pow(point.x - x - width / 2, 2) / Math.pow(width / 2, 2) + Math.pow(point.y - y - height / 2, 2) / Math.pow(height / 2, 2) < 1;
     }
 
@@ -118,11 +118,6 @@ public class Ellipse implements Shape {
             ver[i] = (float) (width / 2 + x + width * Math.sin(step * i) / 2);
             ver[i + 1] = (float) (height / 2 + y + height * Math.cos(step * i) / 2);
         }
-    }
-
-    @Override
-    public boolean handlesSameAsVertices() {
-        return false;
     }
 
     @Override

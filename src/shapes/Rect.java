@@ -55,7 +55,7 @@ public class Rect implements Shape {
     }
 
     @Override
-    public Collider collider() {
+    public Collider collider(float scale) {
         return point -> point.x > x && point.y > y && point.x < x+width && point.y < y+height;
     }
 

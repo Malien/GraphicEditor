@@ -11,7 +11,7 @@ import static org.lwjgl.opengl.GL11.GL_POLYGON;
 
 public class Polygon implements Shape {
 
-    private ArrayList<Float> ver = new ArrayList<>();
+    protected ArrayList<Float> ver = new ArrayList<>();
     private Vec3<Float> color = new Vec3<>(0f, 0f, 0f);
 
     private float[] boundingBox = new float[4];
@@ -76,23 +76,22 @@ public class Polygon implements Shape {
     }
 
     @Override
-    public Collider collider() {
+    public Collider collider(float scale) {
         return point -> {
-            float[][] sides = new float[ver.size()][4];
+            float[][] sides = new float[ver.size() / 2][4];
             if (
                     point.x < boundingBox[0] ||
                             point.x > boundingBox[1] ||
                             point.y < boundingBox[2] ||
                             point.y > boundingBox[3]
             ) {
-                System.out.println("Outside box");
                 return false;
             }
-            for (int i = 0; i < ver.size(); i += 2) {
-                sides[i][0] = ver.get(i);
-                sides[i][1] = ver.get(i + 1);
-                sides[i][2] = ver.get((i + 2) % ver.size());
-                sides[i][3] = ver.get((i + 3) % ver.size());
+            for (int i = 0; i < sides.length; i++) {
+                sides[i][0] = ver.get(2 * i);
+                sides[i][1] = ver.get(2 * i + 1);
+                sides[i][2] = ver.get((2 * i + 2) % ver.size());
+                sides[i][3] = ver.get((2 * i + 3) % ver.size());
             }
             //offset ray endpoint outside of bounding box to ensure raycaster works properly
             float endx = boundingBox[2] + 1;
@@ -128,5 +127,6 @@ public class Polygon implements Shape {
             ver.set(i, ver.get(i) + vec.x);
             ver.set(i + 1, ver.get(i + 1) + vec.y);
         }
+        updateBB();
     }
 }

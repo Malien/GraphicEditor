@@ -1,5 +1,5 @@
 package components;
 
 public enum Tool {
-    SELECT, RECT, POLYGON, ELLIPSE
+    SELECT, RECT, POLYGON, ELLIPSE, PEN
 }

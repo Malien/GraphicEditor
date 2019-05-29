@@ -5,8 +5,6 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.*;
-import java.util.LinkedList;
 
 import static javax.swing.border.BevelBorder.LOWERED;
 
@@ -22,7 +20,8 @@ public class UIRenderer extends JFrame {
     private JSlider bSlider;
     private JTextField hexColorCodeField;
     private JPanel colorDisplay;
-    private JRadioButton ellipseLRadioButton;
+    private JRadioButton ellipseRadioButton;
+    private JRadioButton penRadioButton;
 
     private ToolState state;
     private String oldHex;
@@ -40,7 +39,8 @@ public class UIRenderer extends JFrame {
         toolGroup.add(selectToolRadioButton);
         toolGroup.add(rectangleRadioButton);
         toolGroup.add(polygonRadioButton);
-        toolGroup.add(ellipseLRadioButton);
+        toolGroup.add(ellipseRadioButton);
+        toolGroup.add(penRadioButton);
 
         colorDisplay.setBorder(BorderFactory.createBevelBorder(LOWERED));
         colorDisplay.setBackground(Color.ORANGE);
@@ -57,13 +57,20 @@ public class UIRenderer extends JFrame {
             state.current = Tool.SELECT;
         });
         rectangleRadioButton.addActionListener(e -> {
+            canvas.selected = null;
             state.current = Tool.RECT;
         });
         polygonRadioButton.addActionListener(e -> {
+            canvas.selected = null;
             state.current = Tool.POLYGON;
         });
-        ellipseLRadioButton.addActionListener(e -> {
+        ellipseRadioButton.addActionListener(e -> {
+            canvas.selected = null;
             state.current = Tool.ELLIPSE;
+        });
+        penRadioButton.addActionListener(e -> {
+            canvas.selected = null;
+            state.current = Tool.PEN;
         });
 
         rSlider.addChangeListener(e -> {
@@ -91,56 +98,18 @@ public class UIRenderer extends JFrame {
             updateColor();
         });
 
-        buttonSave.addActionListener(e -> {save();});
+        buttonSave.addActionListener(e -> {
+            canvas.save();
+        });
 
-        buttonLoad.addActionListener(e -> {load();});
+        buttonLoad.addActionListener(e -> {
+            canvas.load();
+        });
 
         updateColor();
         updateSliders();
 
         pack();
-    }
-
-    void save() {
-        FileDialog fileDialog = new FileDialog(this, "Select where to save drawing", FileDialog.SAVE);
-        fileDialog.setFile("drawing.shape");
-        fileDialog.setVisible(true);
-        if (fileDialog.getFile() != null) {
-            try (ObjectOutputStream outputStream = new ObjectOutputStream(new FileOutputStream(fileDialog.getFile()))) {
-                outputStream.writeObject(canvas.shapes);
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(
-                        this,
-                        "File " + fileDialog.getFile() + " can't be accessed\n" + ex.getLocalizedMessage(),
-                        "Trouble with saving to file",
-                        JOptionPane.ERROR_MESSAGE);
-                ex.printStackTrace();
-            }
-        }
-    }
-
-    void load() {
-        FileDialog fileDialog = new FileDialog(this, "Select file to load", FileDialog.LOAD);
-        fileDialog.setVisible(true);
-        if (fileDialog.getFile() != null) {
-            try (ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(fileDialog.getFile()))) {
-                canvas.shapes = (LinkedList<shapes.Shape>) inputStream.readObject();
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(
-                        this,
-                        "File " + fileDialog.getFile() + " can't be read\n" + ex.getLocalizedMessage(),
-                        "Trouble reading file",
-                        JOptionPane.ERROR_MESSAGE);
-                ex.printStackTrace();
-            } catch (ClassNotFoundException ex) {
-                JOptionPane.showMessageDialog(
-                        this,
-                        "File " + fileDialog.getFile() + " is invalid or corrupted\n" + ex.getLocalizedMessage(),
-                        "Trouble interpreting file",
-                        JOptionPane.ERROR_MESSAGE);
-                ex.printStackTrace();
-            }
-        }
     }
 
     void updateTool() {
@@ -155,7 +124,7 @@ public class UIRenderer extends JFrame {
                 polygonRadioButton.setSelected(true);
                 break;
             case ELLIPSE:
-                ellipseLRadioButton.setSelected(true);
+                ellipseRadioButton.setSelected(true);
                 break;
         }
     }

@@ -16,17 +16,14 @@ public interface Shape extends Serializable {
     ShapeHandle getHandle(Vec2<Float> pos, float radius);
 
     void translate(Vec2<Float> vec);
-    Collider collider();
+
+    Collider collider(float scale);
 
     default void updateForScale(float scale) {
     }
 
-    default boolean handlesSameAsVertices() {
-        return true;
-    }
-
     default float[] handles() {
-        return null;
+        return vertices();
     }
 
 }

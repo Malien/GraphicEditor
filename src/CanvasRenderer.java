@@ -4,18 +4,19 @@ import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.GL;
 import primitives.Vec2;
 import primitives.Vec3;
+import shapes.Polygon;
+import shapes.Shape;
 import shapes.*;
 import util.Transfrom;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import javax.swing.*;
+import java.awt.*;
+import java.io.*;
 import java.util.LinkedList;
 
 import static org.lwjgl.glfw.Callbacks.glfwFreeCallbacks;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
-import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
 public class CanvasRenderer {
@@ -33,6 +34,25 @@ public class CanvasRenderer {
     private Vec2<Double> prevPos = new Vec2<>(0.0,0.0);
     private Vec2<Double> mouseSpeed = new Vec2<>(0.0, 0.0);
     private boolean tracked = false;
+
+    private double scrollSpeed = 0;
+    private static final double DECCEL_RATE = 0.8;
+    private static final double SCROLL_RATE = 0.04;
+
+    //Transformations
+    private Vec2<Float> translation = new Vec2<>(0f, 0f);
+    private float scale = 1;
+
+    Shape selected = null;
+    //General variables
+    private LinkedList<Shape> shapes = new LinkedList<>();
+    private static final float VERTEX_RADIUS = 5;
+
+    private UIRenderer ui;
+    private ToolState state;
+    private long window;
+    private boolean grabbed = false;
+    private ShapeHandle shapeHandle = null;
     //Callbacks
     private final GLFWKeyCallbackI keyCallback = (window, key, scancode, action, mods) -> {
         if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
@@ -47,10 +67,10 @@ public class CanvasRenderer {
         if ((key == GLFW_KEY_LEFT_ALT || key == GLFW_KEY_RIGHT_ALT) && action == GLFW_RELEASE) {
             kAlt = false;
         }
-        if ((key ==GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL) && action == GLFW_PRESS) {
+        if ((key == GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL) && action == GLFW_PRESS) {
             kCtrl = true;
         }
-        if ((key ==GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL) && action == GLFW_RELEASE) {
+        if ((key == GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL) && action == GLFW_RELEASE) {
             kCtrl = false;
         }
         if (key == GLFW_KEY_V && action == GLFW_PRESS) {
@@ -58,15 +78,23 @@ public class CanvasRenderer {
             ui.updateTool();
         }
         if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+            selected = null;
             state.current = Tool.RECT;
             ui.updateTool();
         }
-        if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+        if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+            selected = null;
             state.current = Tool.POLYGON;
             ui.updateTool();
         }
         if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+            selected = null;
             state.current = Tool.ELLIPSE;
+            ui.updateTool();
+        }
+        if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+            selected = null;
+            state.current = Tool.PEN;
             ui.updateTool();
         }
         if ((key == GLFW_KEY_DELETE || key == GLFW_KEY_BACKSPACE) && action == GLFW_RELEASE && selected != null) {
@@ -74,40 +102,15 @@ public class CanvasRenderer {
             selected = null;
         }
         if (key == GLFW_KEY_S && action == GLFW_PRESS && kCtrl) {
-            ui.save();
+            save();
         }
         if (key == GLFW_KEY_O && action == GLFW_PRESS && kCtrl) {
-            ui.load();
+            load();
         }
         if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
             selected = null;
         }
     };
-    private double scrollSpeed = 0;
-    private static final double DECCEL_RATE = 0.8;
-    private static final double SCROLL_RATE = 0.04;
-
-    //Transformations
-    private Vec2<Float> translation = new Vec2<>(0f, 0f);
-    private float scale = 1;
-
-    //General variables
-    LinkedList<Shape> shapes = new LinkedList<>();
-    private Shape selected = null;
-    private final GLFWScrollCallbackI scrollCallback = (window, xoffset, yoffset) -> {
-        if (kAlt) {
-            scrollSpeed = SCROLL_RATE * yoffset;
-            shapes.forEach(shape -> shape.updateForScale(
-                    (float) (scale + scrollSpeed * scrollSpeed / DECCEL_RATE - scrollSpeed * scrollSpeed / 2 / DECCEL_RATE)));
-        }
-    };
-    private static final float VERTEX_RADIUS = 5;
-
-    private UIRenderer ui;
-    private ToolState state;
-    private long window;
-    private boolean grabbed = false;
-    private ShapeHandle shapeHandle = null;
     private final GLFWWindowSizeCallbackI resizeCallback = (window, width, height) -> {
         glViewport(0, 0, width, height);
         glMatrixMode(GL_PROJECTION);
@@ -120,14 +123,14 @@ public class CanvasRenderer {
     };
     private final GLFWMouseButtonCallbackI mbCallback = (window, button, action, mods) -> {
         if (!kSpace && state.current == Tool.SELECT && button == GLFW_MOUSE_BUTTON_1 && action == GLFW_PRESS) {
-            Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(cursorPos(window), translation, scale);
+            Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(cursorPos(), translation, scale);
             if (selected != null) {
                 shapeHandle = selected.getHandle(worldPos, VERTEX_RADIUS / scale);
                 if (shapeHandle != null) return;
             }
             selected = null;
             for (Shape shape : shapes) {
-                if (shape.collider().contains(worldPos)) {
+                if (shape.collider(scale).contains(worldPos)) {
                     selected = shape;
                 }
             }
@@ -137,8 +140,15 @@ public class CanvasRenderer {
                 ui.updateSliders();
             }
         }
-        if (state.current == Tool.POLYGON && selected != null && button == GLFW_MOUSE_BUTTON_2 && action == GLFW_PRESS) {
+        if (selected instanceof Polygon && button == GLFW_MOUSE_BUTTON_2 && action == GLFW_PRESS) {
             selected = null;
+        }
+    };
+    private final GLFWScrollCallbackI scrollCallback = (window, xoffset, yoffset) -> {
+        if (kAlt) {
+            scrollSpeed = SCROLL_RATE * yoffset;
+            shapes.forEach(shape -> shape.updateForScale(
+                    (float) (scale + scrollSpeed * scrollSpeed / DECCEL_RATE - scrollSpeed * scrollSpeed / 2 / DECCEL_RATE)));
         }
     };
     private final GLFWDropCallbackI dropCallback = (window, count, names) -> {};
@@ -155,42 +165,26 @@ public class CanvasRenderer {
         this.state = state;
     }
 
-    private Vec2<Integer> windowSize(long window) {
+    private Vec2<Integer> windowSize() {
         int[] width = new int[1];
         int[] height = new int[1];
         glfwGetWindowSize(window, width, height);
         return new Vec2<>(width[0], height[0]);
     }
-    private Vec2<Integer> windowPos(long window) {
-        int[] x = new int[1];
-        int[] y = new int[1];
-        glfwGetWindowPos(window, x, y);
-        return new Vec2<>(x[0], y[0]);
-    }
-    private Vec2<Double> cursorPos(long window) {
+
+    private Vec2<Double> cursorPos() {
         double[] x = new double[1];
         double[] y = new double[1];
         glfwGetCursorPos(window, x, y);
         return new Vec2<>(x[0], y[0]);
     }
 
-    private int createShader(int type, String sourceFile) throws IOException, RuntimeException{
-        String code = new String(Files.readAllBytes(Paths.get(sourceFile)));
-        int shader = glCreateShader(type);
-        glShaderSource(shader, code);
-        glCompileShader(shader);
-        if (glGetShaderi(shader, GL_COMPILE_STATUS) == GL_FALSE) {
-            throw new RuntimeException("Can't compile shader: " +  glGetShaderInfoLog(shader));
-        }
-        return shader;
-    }
-
-    private void processMouse(long window) {
+    private void processMouse() {
         boolean mousePressed = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) == GLFW_PRESS;
         if (kSpace) {
             if (mousePressed) {
                 if (tracked) {
-                    Vec2<Double> currPos = cursorPos(window);
+                    Vec2<Double> currPos = cursorPos();
                     mouseSpeed.x = currPos.x - prevPos.x;
                     mouseSpeed.y = currPos.y - prevPos.y;
 
@@ -200,7 +194,7 @@ public class CanvasRenderer {
                     prevPos = currPos;
                 } else {
                     tracked = true;
-                    prevPos = cursorPos(window);
+                    prevPos = cursorPos();
                 }
             } else {
                 tracked = false;
@@ -209,7 +203,7 @@ public class CanvasRenderer {
             case RECT:
                 if (mousePressed) {
                     if (selected == null) {
-                        Vec2<Double> curPos = cursorPos(window);
+                        Vec2<Double> curPos = cursorPos();
                         selected = new Rect(
                                 (curPos.x.floatValue() - translation.x) / scale,
                                 (curPos.y.floatValue() - translation.y) / scale,
@@ -218,7 +212,7 @@ public class CanvasRenderer {
                                 state.color.copy());
                         shapes.add(selected);
                     } else {
-                        Vec2<Double> curPos = cursorPos(window);
+                        Vec2<Double> curPos = cursorPos();
                         Rect selectedRect = (Rect) selected;
                         selectedRect.width = (curPos.x.floatValue() - translation.x) / scale - selectedRect.x;
                         selectedRect.height = (curPos.y.floatValue() - translation.y) / scale - selectedRect.y;
@@ -230,7 +224,7 @@ public class CanvasRenderer {
                 break;
             case SELECT:
                 if (selected != null && mousePressed) {
-                    Vec2<Double> mousePos = cursorPos(window);
+                    Vec2<Double> mousePos = cursorPos();
                     Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(mousePos, translation, scale);
                     if (shapeHandle != null) {
                         if (tracked) {
@@ -254,7 +248,7 @@ public class CanvasRenderer {
                             prevPos = mousePos;
                         }
                     } else {
-                        grabbed = selected.collider().contains(worldPos);
+                        grabbed = selected.collider(scale).contains(worldPos);
                     }
                 }
                 break;
@@ -262,14 +256,14 @@ public class CanvasRenderer {
                 if (mousePressed) {
                     if (selected == null) {
                         Polygon poly = new Polygon();
-                        prevPos = cursorPos(window);
+                        prevPos = cursorPos();
                         Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(prevPos, translation, scale);
                         poly.add(worldPos.x, worldPos.y);
                         selected = poly;
                         shapes.add(selected);
                     } else {
                         Polygon poly = (Polygon) selected;
-                        Vec2<Double> mousePos = cursorPos(window);
+                        Vec2<Double> mousePos = cursorPos();
                         Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(mousePos, translation, scale);
                         if (Transfrom.length(mousePos, prevPos) > VERTEX_RADIUS) poly.add(worldPos.x, worldPos.y);
                         prevPos = mousePos;
@@ -279,7 +273,7 @@ public class CanvasRenderer {
             case ELLIPSE:
                 if (mousePressed) {
                     if (selected == null) {
-                        Vec2<Double> curPos = cursorPos(window);
+                        Vec2<Double> curPos = cursorPos();
                         selected = new Ellipse(
                                 (curPos.x.floatValue() - translation.x) / scale,
                                 (curPos.y.floatValue() - translation.y) / scale,
@@ -289,7 +283,7 @@ public class CanvasRenderer {
                                 state.color.copy());
                         shapes.add(selected);
                     } else {
-                        Vec2<Double> curPos = cursorPos(window);
+                        Vec2<Double> curPos = cursorPos();
                         Ellipse selectedEllipse = (Ellipse) selected;
                         selectedEllipse.width = (curPos.x.floatValue() - translation.x) / scale - selectedEllipse.x;
                         selectedEllipse.height = (curPos.y.floatValue() - translation.y) / scale - selectedEllipse.y;
@@ -297,6 +291,24 @@ public class CanvasRenderer {
                     }
                 } else {
                     selected = null;
+                }
+                break;
+            case PEN:
+                if (mousePressed) {
+                    if (selected == null) {
+                        Pen pen = new Pen();
+                        prevPos = cursorPos();
+                        Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(prevPos, translation, scale);
+                        pen.add(worldPos.x, worldPos.y);
+                        selected = pen;
+                        shapes.add(selected);
+                    } else {
+                        Pen pen = (Pen) selected;
+                        Vec2<Double> mousePos = cursorPos();
+                        Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(mousePos, translation, scale);
+                        if (Transfrom.length(mousePos, prevPos) > VERTEX_RADIUS) pen.add(worldPos.x, worldPos.y);
+                        prevPos = mousePos;
+                    }
                 }
                 break;
         }
@@ -310,7 +322,7 @@ public class CanvasRenderer {
             grabbed = false;
         }
         scale *= 1 + scrollSpeed;
-        Vec2<Double> mousePos = cursorPos(window);
+        Vec2<Double> mousePos = cursorPos();
 
         double mx = translation.x - mousePos.x;
         double my = translation.y - mousePos.y;
@@ -354,7 +366,7 @@ public class CanvasRenderer {
             GLFWVidMode vidmode = glfwGetVideoMode(glfwGetPrimaryMonitor());
 
             if (vidmode != null) {
-                Vec2<Integer> winSize = windowSize(window);
+                Vec2<Integer> winSize = windowSize();
                 glfwSetWindowPos(
                         window,
                         (vidmode.width() - winSize.x) / 2,
@@ -398,13 +410,15 @@ public class CanvasRenderer {
                 //Draw border around selected target
                 if (selected != null) {
                     selected.setColor(state.color.copy());
-                    glBegin(GL_LINE_LOOP);
-                        glColor3f(0.9f, 0.9f, 0.9f);
-                    float[] ver = (selected.handlesSameAsVertices()) ? selected.vertices() : selected.handles();
-                        for (int i=0; i<ver.length; i+=2) {
-                            glVertex2f(ver[i]*scale+translation.x, ver[i+1]*scale + translation.y);
+                    glColor3f(0.9f, 0.9f, 0.9f);
+                    float[] ver = selected.handles();
+                    if (selected.mode() != GL_LINE_STRIP) {
+                        glBegin(GL_LINE_LOOP);
+                        for (int i = 0; i < ver.length; i += 2) {
+                            glVertex2f(ver[i] * scale + translation.x, ver[i + 1] * scale + translation.y);
                         }
-                    glEnd();
+                        glEnd();
+                    }
                     glBegin(GL_QUADS);
                         for (int i=0; i<ver.length; i+=2) {
                             float x = ver[i]*scale+translation.x;
@@ -419,7 +433,7 @@ public class CanvasRenderer {
 
                 glfwSwapBuffers(window);
 
-                processMouse(window);
+                processMouse();
                 glfwPollEvents();
             }
         }
@@ -428,7 +442,6 @@ public class CanvasRenderer {
         terminate();
     }
 
-
     void terminate() {
         glfwFreeCallbacks(window);
         glfwDestroyWindow(window);
@@ -436,5 +449,47 @@ public class CanvasRenderer {
         glfwTerminate();
         glfwSetErrorCallback(null).free();
         System.exit(0);
+    }
+
+    void save() {
+        FileDialog fileDialog = new FileDialog(ui, "Select where to save drawing", FileDialog.SAVE);
+        fileDialog.setFile("drawing.shape");
+        fileDialog.setVisible(true);
+        if (fileDialog.getFile() != null) {
+            try (ObjectOutputStream outputStream = new ObjectOutputStream(new FileOutputStream(fileDialog.getFile()))) {
+                outputStream.writeObject(shapes);
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(
+                        null,
+                        "File " + fileDialog.getFile() + " can't be accessed\n" + ex.getLocalizedMessage(),
+                        "Trouble with saving to file",
+                        JOptionPane.ERROR_MESSAGE);
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    void load() {
+        FileDialog fileDialog = new FileDialog(ui, "Select file to load", FileDialog.LOAD);
+        fileDialog.setVisible(true);
+        if (fileDialog.getFile() != null) {
+            try (ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(fileDialog.getFile()))) {
+                shapes = (LinkedList<shapes.Shape>) inputStream.readObject();
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(
+                        null,
+                        "File " + fileDialog.getFile() + " can't be read\n" + ex.getLocalizedMessage(),
+                        "Trouble reading file",
+                        JOptionPane.ERROR_MESSAGE);
+                ex.printStackTrace();
+            } catch (ClassNotFoundException ex) {
+                JOptionPane.showMessageDialog(
+                        null,
+                        "File " + fileDialog.getFile() + " is invalid or corrupted\n" + ex.getLocalizedMessage(),
+                        "Trouble interpreting file",
+                        JOptionPane.ERROR_MESSAGE);
+                ex.printStackTrace();
+            }
+        }
     }
 }
