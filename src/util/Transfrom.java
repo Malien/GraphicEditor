@@ -8,4 +8,8 @@ public final class Transfrom {
         return new Vec2<>((viewport.x.floatValue()-translation.x)/scale, (viewport.y.floatValue()-translation.y)/scale);
     }
 
+    public static double length(Vec2<Double> start, Vec2<Double> end) {
+        return Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    }
+
 }

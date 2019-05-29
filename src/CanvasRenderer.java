@@ -4,9 +4,7 @@ import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.GL;
 import primitives.Vec2;
 import primitives.Vec3;
-import shapes.Corner;
-import shapes.Rect;
-import shapes.Shape;
+import shapes.*;
 import util.Transfrom;
 
 import java.io.IOException;
@@ -35,24 +33,6 @@ public class CanvasRenderer {
     private Vec2<Double> prevPos = new Vec2<>(0.0,0.0);
     private Vec2<Double> mouseSpeed = new Vec2<>(0.0, 0.0);
     private boolean tracked = false;
-    private double scrollSpeed = 0;
-    private static final double DECCEL_RATE = 0.8;
-    private static final double SCROLL_RATE = 0.04;
-
-    //Transformations
-    private Vec2<Float> translation = new Vec2<>(0f, 0f);
-    private float scale = 1;
-
-    //General variables
-    LinkedList<Shape> shapes = new LinkedList<>();
-    private Shape selected = null;
-    private Corner corner = null;
-    private static final float VERTEX_RADIUS = 5;
-
-    private UIRenderer ui;
-    private ToolState state;
-    private long window;
-
     //Callbacks
     private final GLFWKeyCallbackI keyCallback = (window, key, scancode, action, mods) -> {
         if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
@@ -85,6 +65,10 @@ public class CanvasRenderer {
             state.current = Tool.POLYGON;
             ui.updateTool();
         }
+        if (key == GLFW_KEY_L && action == GLFW_PRESS) {
+            state.current = Tool.ELLIPSE;
+            ui.updateTool();
+        }
         if ((key == GLFW_KEY_DELETE || key == GLFW_KEY_BACKSPACE) && action == GLFW_RELEASE && selected != null) {
             shapes.remove(selected);
             selected = null;
@@ -95,13 +79,51 @@ public class CanvasRenderer {
         if (key == GLFW_KEY_O && action == GLFW_PRESS && kCtrl) {
             ui.load();
         }
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
+            selected = null;
+        }
+    };
+    private double scrollSpeed = 0;
+    private static final double DECCEL_RATE = 0.8;
+    private static final double SCROLL_RATE = 0.04;
+
+    //Transformations
+    private Vec2<Float> translation = new Vec2<>(0f, 0f);
+    private float scale = 1;
+
+    //General variables
+    LinkedList<Shape> shapes = new LinkedList<>();
+    private Shape selected = null;
+    private final GLFWScrollCallbackI scrollCallback = (window, xoffset, yoffset) -> {
+        if (kAlt) {
+            scrollSpeed = SCROLL_RATE * yoffset;
+            shapes.forEach(shape -> shape.updateForScale(
+                    (float) (scale + scrollSpeed * scrollSpeed / DECCEL_RATE - scrollSpeed * scrollSpeed / 2 / DECCEL_RATE)));
+        }
+    };
+    private static final float VERTEX_RADIUS = 5;
+
+    private UIRenderer ui;
+    private ToolState state;
+    private long window;
+    private boolean grabbed = false;
+    private ShapeHandle shapeHandle = null;
+    private final GLFWWindowSizeCallbackI resizeCallback = (window, width, height) -> {
+        glViewport(0, 0, width, height);
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+
+        glOrtho(0.0f, width, height, 0, 1.0f, -1.0f);
+
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
     };
     private final GLFWMouseButtonCallbackI mbCallback = (window, button, action, mods) -> {
         if (!kSpace && state.current == Tool.SELECT && button == GLFW_MOUSE_BUTTON_1 && action == GLFW_PRESS) {
             Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(cursorPos(window), translation, scale);
             if (selected != null) {
-                corner = selected.getCorner(worldPos, VERTEX_RADIUS / scale);
-                if (corner != null) return;
+                shapeHandle = selected.getHandle(worldPos, VERTEX_RADIUS / scale);
+                if (shapeHandle != null) return;
             }
             selected = null;
             for (Shape shape : shapes) {
@@ -115,19 +137,9 @@ public class CanvasRenderer {
                 ui.updateSliders();
             }
         }
-    };
-    private final GLFWWindowSizeCallbackI resizeCallback = (window, width, height) -> {
-        glViewport(0,0,width,height);
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-
-        glOrtho(0.0f,width,height,0,1.0f,-1.0f);
-
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-    };
-    private final GLFWScrollCallbackI scrollCallback = (window, xoffset, yoffset) -> {
-        if (kAlt) scrollSpeed = SCROLL_RATE * yoffset;
+        if (state.current == Tool.POLYGON && selected != null && button == GLFW_MOUSE_BUTTON_2 && action == GLFW_PRESS) {
+            selected = null;
+        }
     };
     private final GLFWDropCallbackI dropCallback = (window, count, names) -> {};
 
@@ -220,28 +232,71 @@ public class CanvasRenderer {
                 if (selected != null && mousePressed) {
                     Vec2<Double> mousePos = cursorPos(window);
                     Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(mousePos, translation, scale);
-                    if (corner != null) {
+                    if (shapeHandle != null) {
                         if (tracked) {
                             Vec2<Float> vec = new Vec2<>(
                                     (float) (mousePos.x - prevPos.x) / scale,
                                     (float) (mousePos.y - prevPos.y) / scale);
-                            corner.translate(vec);
+                            shapeHandle.translate(vec);
                             prevPos = mousePos;
                         } else {
                             tracked = true;
                             prevPos = mousePos;
                         }
-                    } else if (selected.collider().contains(worldPos)) {
+                    } else if (grabbed) {
                         if (tracked) {
                             selected.translate(new Vec2<>(
-                                            (float) (mousePos.x - prevPos.x) / scale,
-                                            (float) (mousePos.y - prevPos.y) / scale));
+                                    (float) (mousePos.x - prevPos.x) / scale,
+                                    (float) (mousePos.y - prevPos.y) / scale));
                             prevPos = mousePos;
                         } else {
                             tracked = true;
                             prevPos = mousePos;
                         }
+                    } else {
+                        grabbed = selected.collider().contains(worldPos);
                     }
+                }
+                break;
+            case POLYGON:
+                if (mousePressed) {
+                    if (selected == null) {
+                        Polygon poly = new Polygon();
+                        prevPos = cursorPos(window);
+                        Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(prevPos, translation, scale);
+                        poly.add(worldPos.x, worldPos.y);
+                        selected = poly;
+                        shapes.add(selected);
+                    } else {
+                        Polygon poly = (Polygon) selected;
+                        Vec2<Double> mousePos = cursorPos(window);
+                        Vec2<Float> worldPos = Transfrom.viewportToWorldSpace(mousePos, translation, scale);
+                        if (Transfrom.length(mousePos, prevPos) > VERTEX_RADIUS) poly.add(worldPos.x, worldPos.y);
+                        prevPos = mousePos;
+                    }
+                }
+                break;
+            case ELLIPSE:
+                if (mousePressed) {
+                    if (selected == null) {
+                        Vec2<Double> curPos = cursorPos(window);
+                        selected = new Ellipse(
+                                (curPos.x.floatValue() - translation.x) / scale,
+                                (curPos.y.floatValue() - translation.y) / scale,
+                                0,
+                                0,
+                                scale,
+                                state.color.copy());
+                        shapes.add(selected);
+                    } else {
+                        Vec2<Double> curPos = cursorPos(window);
+                        Ellipse selectedEllipse = (Ellipse) selected;
+                        selectedEllipse.width = (curPos.x.floatValue() - translation.x) / scale - selectedEllipse.x;
+                        selectedEllipse.height = (curPos.y.floatValue() - translation.y) / scale - selectedEllipse.y;
+                        selectedEllipse.updateForScale(scale);
+                    }
+                } else {
+                    selected = null;
                 }
                 break;
         }
@@ -252,6 +307,7 @@ public class CanvasRenderer {
             translation.x += mouseSpeed.x.floatValue();
             translation.y += mouseSpeed.y.floatValue();
             tracked = false;
+            grabbed = false;
         }
         scale *= 1 + scrollSpeed;
         Vec2<Double> mousePos = cursorPos(window);
@@ -344,7 +400,7 @@ public class CanvasRenderer {
                     selected.setColor(state.color.copy());
                     glBegin(GL_LINE_LOOP);
                         glColor3f(0.9f, 0.9f, 0.9f);
-                        float[] ver = selected.vertices();
+                    float[] ver = (selected.handlesSameAsVertices()) ? selected.vertices() : selected.handles();
                         for (int i=0; i<ver.length; i+=2) {
                             glVertex2f(ver[i]*scale+translation.x, ver[i+1]*scale + translation.y);
                         }
@@ -373,7 +429,7 @@ public class CanvasRenderer {
     }
 
 
-    public void terminate() {
+    void terminate() {
         glfwFreeCallbacks(window);
         glfwDestroyWindow(window);
 

@@ -20,9 +20,9 @@ public class UIRenderer extends JFrame {
     private JSlider rSlider;
     private JSlider gSlider;
     private JSlider bSlider;
-    private JSlider aSlider;
     private JTextField hexColorCodeField;
     private JPanel colorDisplay;
+    private JRadioButton ellipseLRadioButton;
 
     private ToolState state;
     private String oldHex;
@@ -40,6 +40,7 @@ public class UIRenderer extends JFrame {
         toolGroup.add(selectToolRadioButton);
         toolGroup.add(rectangleRadioButton);
         toolGroup.add(polygonRadioButton);
+        toolGroup.add(ellipseLRadioButton);
 
         colorDisplay.setBorder(BorderFactory.createBevelBorder(LOWERED));
         colorDisplay.setBackground(Color.ORANGE);
@@ -61,6 +62,9 @@ public class UIRenderer extends JFrame {
         polygonRadioButton.addActionListener(e -> {
             state.current = Tool.POLYGON;
         });
+        ellipseLRadioButton.addActionListener(e -> {
+            state.current = Tool.ELLIPSE;
+        });
 
         rSlider.addChangeListener(e -> {
             state.color.x = rSlider.getValue() / 255f;
@@ -72,10 +76,6 @@ public class UIRenderer extends JFrame {
         });
         bSlider.addChangeListener(e -> {
             state.color.z = bSlider.getValue() / 255f;
-            updateColor();
-        });
-        aSlider.addChangeListener(e -> {
-//            state.color.x = rSlider.getValue() / 255f;
             updateColor();
         });
         hexColorCodeField.addActionListener(e -> {
@@ -154,6 +154,9 @@ public class UIRenderer extends JFrame {
             case POLYGON:
                 polygonRadioButton.setSelected(true);
                 break;
+            case ELLIPSE:
+                ellipseLRadioButton.setSelected(true);
+                break;
         }
     }
 
@@ -168,6 +171,5 @@ public class UIRenderer extends JFrame {
         rSlider.setValue((int) (state.color.x * 255));
         gSlider.setValue((int) (state.color.y * 255));
         bSlider.setValue((int) (state.color.z * 255));
-//        aSlider.setValue((int) (state.color.x * 255));
     }
 }

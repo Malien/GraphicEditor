@@ -12,17 +12,21 @@ public interface Shape extends Serializable {
     int mode();
     Vec3<Float> color();
     void setColor(Vec3<Float> color);
-    Corner getCorner(Vec2<Float> pos, float radius);
-//    void translate(Vec2<Float> vec);
 
+    ShapeHandle getHandle(Vec2<Float> pos, float radius);
+
+    void translate(Vec2<Float> vec);
     Collider collider();
 
-    default void translate(Vec2<Float> vec) {
-        float[] ver = vertices();
-        for (int i=0; i<ver.length; i+=2) {
-            ver[i] += vec.x;
-            ver[i+1] += vec.y;
-        }
+    default void updateForScale(float scale) {
+    }
+
+    default boolean handlesSameAsVertices() {
+        return true;
+    }
+
+    default float[] handles() {
+        return null;
     }
 
 }

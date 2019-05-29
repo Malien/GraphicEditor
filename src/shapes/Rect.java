@@ -72,7 +72,7 @@ public class Rect implements Shape {
     }
 
     @Override
-    public Corner getCorner(Vec2<Float> pos, float radius) {
+    public ShapeHandle getHandle(Vec2<Float> pos, float radius) {
         if (pos.x > ver[0] - radius && pos.x < ver[0] + radius && pos.y > ver[1] - radius && pos.y < ver[1] + radius) {
             return vec -> {
                 x += vec.x;
